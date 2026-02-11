@@ -12,11 +12,9 @@ Thanks for your interest in contributing. This document covers the basics for bu
 - `AppServerClient/` – Codex app-server client support
 
 ## Swift package dependency
-`ACPClient/Package.swift` references `../../acp-swift-sdk` as a local package dependency.
+`ACPClient/Package.swift` references `acp-swift-sdk` from GitHub at `https://github.com/rebornix/acp-swift-sdk`.
 
-Options:
-- Clone `acp-swift-sdk` alongside this repo (same parent directory), or
-- Update the dependency path to your local checkout.
+The dependency is automatically resolved when building the project.
 
 ## Build (iOS)
 1. Open `Agmente.xcodeproj` in Xcode.

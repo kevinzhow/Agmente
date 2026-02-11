@@ -16,7 +16,7 @@ let package = Package(
             targets: ["ACPClient"]),
     ],
     dependencies: [
-        .package(path: "../../acp-swift-sdk")
+        .package(url: "https://github.com/rebornix/acp-swift-sdk", branch: "main")
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
