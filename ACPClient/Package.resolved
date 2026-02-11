@@ -1,6 +1,15 @@
 {
-  "originHash" : "3ce5f966678efe67e229e2e093313d1bd7fab01702af203bbc77cf0a6d35cb2a",
+  "originHash" : "91c63e3bc962c49a36b39aa9e483d1800a3143f1c19b2f5a3359c74018f0ce5a",
   "pins" : [
+    {
+      "identity" : "acp-swift-sdk",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/rebornix/acp-swift-sdk",
+      "state" : {
+        "branch" : "main",
+        "revision" : "b800b3f2c251e3453fdd10172d671123e1908301"
+      }
+    },
     {
       "identity" : "swift-log",
       "kind" : "remoteSourceControl",
