@@ -1,0 +1,26 @@
+# ACPClient Package Guide
+
+## Scope
+Typed ACP transport/service package used by the iOS app.
+
+## Architecture Model
+- Transport concerns, request orchestration, and ACP parsing are separated layers.
+- Public service APIs should remain typed and hide wire-format details from callers.
+- Parsing helpers should be resilient to optional/partial ACP payloads.
+
+## Extension Pattern
+When adding ACP method support:
+1. Add the method constant and typed payload mapping.
+2. Expose a typed service wrapper.
+3. Add response/event parsing coverage.
+4. Ensure delegate and pending-request behavior remain correct.
+5. Add package tests for success and failure paths.
+
+## Compatibility Rules
+- Preserve support for server-initiated JSON-RPC requests (do not treat as transport errors).
+- Keep slash-escaping compatibility option functional.
+- Keep request ID/pending continuation behavior deterministic.
+- Keep reconnection/disconnect semantics from breaking in-flight request handling.
+
+## Tests
+- Run package tests for `ACPClient`.

@@ -1,25 +1,90 @@
 # Agmente Agents Guide
 
+## Documentation Topology
+- `Agents.md` (this file) is the root index for all coding agents.
+- `CLAUDE.md` is the Cloud/Claude agent entrypoint and should reference the same component docs.
+- Component-specific guidance lives next to code in nested files:
+  - `Agmente/AGENTS.md`
+  - `ACPClient/AGENTS.md`
+  - `AppServerClient/AGENTS.md`
+  - `AgmenteTests/AGENTS.md`
+  - `AgmenteUITests/AGENTS.md`
+- Root files should stay concise and link to nested docs instead of duplicating implementation detail.
+
+## Documentation Update Policy
+- Update `Agents.md` and `CLAUDE.md` in the same PR when adding:
+  - a new top-level component/folder,
+  - a new protocol integration (or protocol mode switch logic),
+  - major architecture changes that affect more than one component.
+- Update the closest nested `AGENTS.md` in the same PR when changing:
+  - RPC method mappings,
+  - protocol parsing/serialization behavior,
+  - persistence/session/thread lifecycle behavior,
+  - test contracts or required test env variables.
+- If a code change does not require doc updates, note `Docs: N/A` in the PR description.
+
+## Adding New Components or Protocols
+- Create `<component>/AGENTS.md` when introducing a new component that has runtime logic or tests.
+- Add the new component doc to both root files (`Agents.md` and `CLAUDE.md`).
+- Document:
+  - ownership boundaries,
+  - key files and extension points,
+  - required tests,
+  - compatibility constraints with ACP/Codex and any migration behavior.
+
 ## What this app does
 - Connect to an Agent Client Protocol (ACP) server over WebSocket.
-- Initialize the client, then create sessions to chat with the agent.
-- Cache sessions in memory (many agents do not support `session/list`).
+- Connect to an OpenAI Codex app-server over WebSocket.
+- Detect protocol after `initialize` and route requests to the matching client/runtime.
+- Keep ACP session flow and Codex thread/turn flow separate in app state and UI.
+
+## Protocol modes in Agmente
+- **ACP mode** uses ACP RPC methods (`session/new`, `session/prompt`, `session/cancel`, optional `session/list` and `session/load`).
+- **Codex mode** uses app-server v2 methods (`thread/start`, `thread/resume`, `thread/list`, `turn/start`, `turn/interrupt`, `model/list`, `skills/list`).
+- **Detection**: if `initialize` returns a Codex `userAgent` (for example `codex/…`), Agmente switches to Codex mode for that server.
 
 ## Adding your own agent
-- Tap **Add Server** and enter your WebSocket endpoint and optional bearer token.
+- Tap **Add Server**, then choose **ACP** or **Codex** in `ServerTypePicker`.
+- Enter your WebSocket endpoint and optional bearer token.
 - Set the working directory if your agent expects one.
 - Save, then **Connect** and **Initialize** (if not done automatically).
 - Create a new session to begin chatting.
 
 ## Sessions
-- Sessions are kept in memory per server during the app lifecycle.
-- **For servers without `session/list` support** (like Gemini), sessions are automatically persisted to local storage (Core Data). This allows you to see your session list after app restart.
-- **Session recovery with `session/load`**: If the server supports `session/load`, the app will use it to restore the full conversation history when you open a persisted session.
-- **Persistence with `@rebornix/stdio-to-ws`**: When using `@rebornix/stdio-to-ws --persist`, the server keeps the child process alive during disconnections and buffers messages. Agmente sends a persistent `X-Client-Id` header on every connection, allowing the server to recognize reconnecting clients and replay buffered messages. This is ideal for mobile apps where backgrounding causes brief disconnects.
-- If your agent does expose `session/list`, the app will fetch sessions from the server.
-- Each session opens a chat transcript view; tool calls are surfaced as system messages.
+- Sessions/threads are kept in memory per server during the app lifecycle.
+- **ACP sessions**
+  - For servers without `session/list` support (like Gemini), sessions are persisted to local storage (Core Data) so they remain visible after app restart.
+  - If `session/load` is available, opening a persisted session restores full conversation history from the server.
+  - If `session/list` is available, the app refreshes server-side session summaries.
+- **Codex threads**
+  - The app uses `thread/list` for summaries and `thread/resume` for full history.
+  - `cwd`/timestamp metadata comes from `thread/list` when provided; if missing on older servers, cached values are preserved.
+  - New prompts are sent with `turn/start`, and streaming updates are rendered from turn/item notifications.
+- **Persistence with `@rebornix/stdio-to-ws`**: when using `--persist`, the server keeps the child process alive during disconnections and buffers messages. Agmente sends a persistent `X-Client-Id` header on every connection so reconnecting clients can replay buffered messages.
+- Each session/thread opens a chat transcript view; tool calls are surfaced as system messages.
 
-## Running a Local Agent
+## Running Local Agents
+
+### Codex app-server (direct WebSocket)
+
+```bash
+# If codex is installed in PATH
+codex app-server --listen ws://127.0.0.1:8788
+
+# Or from Codex source checkout
+cargo run -p codex-cli -- app-server --listen ws://127.0.0.1:8788
+```
+
+Stop Codex app-server:
+```bash
+pkill -9 -f "codex.*app-server.*8788"
+```
+
+Add a server with:
+- `Server Type`: `Codex`
+- Endpoint: `ws://127.0.0.1:8788`
+
+> Note: per Codex upstream docs, WebSocket transport is currently marked experimental.
 
 ### Standard Commands (for VS Code auto-approve)
 
@@ -115,7 +180,8 @@ Use these rules for every simulator automation run to avoid wrong taps and wrong
 #### ✅ Server Connection Tests
 | Test | Steps | Expected Result |
 |------|-------|-----------------|
-| Add custom server | Add Server → Enter `ws://localhost:8765/message` → Save | Server saved, can connect |
+| Add ACP server | Add Server → select ACP → Enter `ws://localhost:8765/message` → Save | Server saved, can connect |
+| Add Codex server | Add Server → select Codex → Enter `ws://127.0.0.1:8788` → Save | Server saved, can connect |
 | Connect to server | Tap Connect on server | Status shows "Connected" |
 | Initialize client | Connect → Initialize | Status shows "Initialized" |
 | Handle connection error | Enter invalid endpoint | Error message displayed |
@@ -204,7 +270,10 @@ You can get the simulator UUID from `xcrun simctl list devices` or from the `lis
 ---
 
 ## Codex app-server reference (local source)
-- App-server implementation: `/path/to/codex/codex-rs/app-server`
-  - README for protocol flow and examples: `/path/to/codex/codex-rs/app-server/README.md`
-- Protocol types/schema: `/path/to/codex/codex-rs/app-server-protocol`
-  - v2 protocol definitions (Thread/Turn/Item): `/path/to/codex/codex-rs/app-server-protocol/src/protocol/v2.rs`
+- App-server implementation: `<codex-repo>/codex-rs/app-server`
+  - README for protocol flow and examples: `<codex-repo>/codex-rs/app-server/README.md`
+- Protocol types/schema: `<codex-repo>/codex-rs/app-server-protocol`
+  - v2 protocol definitions (Thread/Turn/Item): `<codex-repo>/codex-rs/app-server-protocol/src/protocol/v2.rs`
+- Schema generation (from installed Codex CLI):
+  - `codex app-server generate-ts --out DIR`
+  - `codex app-server generate-json-schema --out DIR`
