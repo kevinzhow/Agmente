@@ -63,8 +63,10 @@ struct ContentView: View {
             }
 
             let preserved = navigationPath.filter { destination in
-                if case .developerLogs = destination { return true }
-                return false
+                switch destination {
+                case .developerLogs, .folderSessions: return true
+                default: return false
+                }
             }
 
             if newValue.isEmpty {
@@ -78,8 +80,10 @@ struct ContentView: View {
             let sessionId = model.serverSessionId
             if !sessionId.isEmpty {
                 let preserved = navigationPath.filter { destination in
-                    if case .developerLogs = destination { return true }
-                    return false
+                    switch destination {
+                    case .developerLogs, .folderSessions: return true
+                    default: return false
+                    }
                 }
                 navigationPath = preserved + [.session(sessionId)]
             }
@@ -155,6 +159,8 @@ private extension ContentView {
             }
         case .developerLogs:
             DeveloperLogsView(model: model)
+        case .folderSessions(let path, let displayName):
+            FolderSessionsView(model: model, folderPath: path, folderDisplayName: displayName)
         }
     }
 
@@ -312,6 +318,7 @@ private struct SessionListPage: View {
     @State private var showingNewSessionSheet: Bool = false
     @State private var customWorkingDirectory: String = ""
     @AppStorage("summaryCardCollapsed") private var summaryCardCollapsed: Bool = false
+    @AppStorage("sessionGroupingMode") private var groupingMode: SessionGroupingMode = .byTime
     private static let lastConnectedFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.doesRelativeDateFormatting = true
@@ -365,7 +372,47 @@ private struct SessionListPage: View {
             return (group, sorted)
         }
     }
-    
+
+    private static let maxSessionsPerFolder = 5
+
+    private var groupedByFolder: [(group: SessionFolderGroup, sessions: [SessionDisplay], hasMore: Bool)] {
+        var buckets: [String: [SessionDisplay]] = [:]
+        let filtered = filterSessions(model.serverSessionSummaries)
+        let activeId = model.serverIsStreaming ? model.serverSessionId : nil
+        let defaultCwd = model.defaultWorkingDirectory
+
+        for summary in filtered {
+            let folderGroup = SessionFolderGroup.make(from: summary.cwd, defaultCwd: defaultCwd)
+            let display = SessionDisplay(summary: summary, isActive: summary.id == activeId)
+            buckets[folderGroup.path, default: []].append(display)
+        }
+
+        return buckets.map { path, sessions in
+            let group = SessionFolderGroup.make(
+                from: path.isEmpty ? nil : path,
+                defaultCwd: nil
+            )
+            let sorted = sessions.sorted { lhs, rhs in
+                switch (lhs.summary.updatedAt, rhs.summary.updatedAt) {
+                case let (l?, r?):
+                    if l != r { return l > r }
+                    return lhs.summary.id < rhs.summary.id
+                case (_?, nil): return true
+                case (nil, _?): return false
+                case (nil, nil): return lhs.summary.id < rhs.summary.id
+                }
+            }
+            let hasMore = sorted.count > Self.maxSessionsPerFolder
+            let truncated = hasMore ? Array(sorted.prefix(Self.maxSessionsPerFolder)) : sorted
+            return (group, truncated, hasMore)
+        }
+        .sorted { lhs, rhs in
+            let lhsDate = lhs.sessions.first?.summary.updatedAt ?? .distantPast
+            let rhsDate = rhs.sessions.first?.summary.updatedAt ?? .distantPast
+            return lhsDate > rhsDate
+        }
+    }
+
     private var searchPlacement: SearchFieldPlacement {
         if #available(iOS 26.0, *) {
             return .toolbar
@@ -398,8 +445,15 @@ private struct SessionListPage: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 4)
                     } else {
-                        ForEach(groupedSessions, id: \.group) { group, sessions in
-                            sessionSection(title: group.title, sessions: sessions)
+                        switch groupingMode {
+                        case .byTime:
+                            ForEach(groupedSessions, id: \.group) { group, sessions in
+                                sessionSection(title: group.title, sessions: sessions)
+                            }
+                        case .byFolder:
+                            ForEach(groupedByFolder, id: \.group) { group, sessions, hasMore in
+                                folderSection(group: group, sessions: sessions, hasMore: hasMore)
+                            }
                         }
                     }
                 }
@@ -435,6 +489,20 @@ private struct SessionListPage: View {
             )
         }
         .toolbar {
+            if !model.serverSessionSummaries.isEmpty {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            groupingMode = groupingMode.toggled
+                        }
+                    } label: {
+                        Image(systemName: groupingMode == .byTime ? "folder" : "clock")
+                    }
+                    .accessibilityLabel(groupingMode == .byTime ? "Group by folder" : "Group by time")
+                    .accessibilityIdentifier("sessionGroupingToggle")
+                }
+            }
+
             if #available(iOS 26.0, *) {
                 DefaultToolbarItem(kind: .search, placement: .bottomBar)
 
@@ -719,6 +787,72 @@ private struct SessionListPage: View {
             }
         }
     }
+
+    private func folderSection(
+        group: SessionFolderGroup,
+        sessions: [SessionDisplay],
+        hasMore: Bool
+    ) -> some View {
+        let defaultCwd = model.defaultWorkingDirectory
+
+        return VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(group.displayName)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                if !group.path.isEmpty && group.displayName != group.path {
+                    Text(group.path)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+
+            VStack(spacing: 12) {
+                ForEach(sessions) { session in
+                    let summary = session.summary
+                    let displayCwd = summary.cwd ?? defaultCwd
+                    NavigationLink(value: NavigationDestination.session(summary.id)) {
+                        SessionRow(
+                            title: summary.title ?? "New Chat",
+                            lastMessage: model.selectedServerId.flatMap {
+                                model.getLastMessagePreview(for: $0, sessionId: summary.id)
+                            },
+                            cwd: displayCwd,
+                            isActive: session.isActive
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if hasMore {
+                    NavigationLink(value: NavigationDestination.folderSessions(
+                        path: group.path,
+                        displayName: group.displayName
+                    )) {
+                        HStack {
+                            Image(systemName: "ellipsis")
+                            Text("Show More")
+                                .font(.subheadline.weight(.medium))
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .foregroundStyle(.accentColor)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .modifier(SessionCardStyle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("showMoreFolder_\(group.path)")
+                }
+            }
+        }
+    }
 }
 
 private struct SessionDisplay: Identifiable {
@@ -726,6 +860,32 @@ private struct SessionDisplay: Identifiable {
     let isActive: Bool
 
     var id: String { summary.id }
+}
+
+private enum SessionGroupingMode: String, CaseIterable {
+    case byTime
+    case byFolder
+
+    var label: String {
+        switch self {
+        case .byTime: return "Time"
+        case .byFolder: return "Folder"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .byTime: return "clock"
+        case .byFolder: return "folder"
+        }
+    }
+
+    var toggled: SessionGroupingMode {
+        switch self {
+        case .byTime: return .byFolder
+        case .byFolder: return .byTime
+        }
+    }
 }
 
 private enum SessionTimeGroup: CaseIterable, Hashable {
@@ -798,6 +958,26 @@ private enum SessionTimeGroup: CaseIterable, Hashable {
         }
 
         return .earlier
+    }
+}
+
+private struct SessionFolderGroup: Hashable, Identifiable {
+    let path: String
+    let displayName: String
+
+    var id: String { path }
+
+    static func make(from cwd: String?, defaultCwd: String?) -> SessionFolderGroup {
+        let raw = cwd ?? defaultCwd ?? ""
+        let normalized = raw.hasSuffix("/") && raw.count > 1
+            ? String(raw.dropLast())
+            : raw
+        guard !normalized.isEmpty else {
+            return SessionFolderGroup(path: "", displayName: "No Folder")
+        }
+        let last = (normalized as NSString).lastPathComponent
+        let display = last.isEmpty ? normalized : last
+        return SessionFolderGroup(path: normalized, displayName: display)
     }
 }
 
@@ -1042,9 +1222,104 @@ private struct DeveloperLogRow: View {
     }
 }
 
+private struct FolderSessionsView: View {
+    @ObservedObject var model: AppViewModel
+    let folderPath: String
+    let folderDisplayName: String
+    @State private var searchText: String = ""
+
+    private var sessionsInFolder: [SessionDisplay] {
+        let activeId = model.serverIsStreaming ? model.serverSessionId : nil
+        let defaultCwd = model.defaultWorkingDirectory
+        return model.serverSessionSummaries
+            .filter { session in
+                let sessionCwd: String
+                if let cwd = session.cwd {
+                    sessionCwd = cwd.hasSuffix("/") && cwd.count > 1
+                        ? String(cwd.dropLast()) : cwd
+                } else {
+                    sessionCwd = defaultCwd
+                }
+                return folderPath.isEmpty
+                    ? sessionCwd.isEmpty
+                    : sessionCwd == folderPath
+            }
+            .filter { session in
+                let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                guard !query.isEmpty else { return true }
+                return (session.title?.lowercased().contains(query) ?? false)
+                    || session.id.lowercased().contains(query)
+            }
+            .sorted { lhs, rhs in
+                switch (lhs.updatedAt, rhs.updatedAt) {
+                case let (l?, r?):
+                    if l != r { return l > r }
+                    return lhs.id < rhs.id
+                case (_?, nil): return true
+                case (nil, _?): return false
+                case (nil, nil): return lhs.id < rhs.id
+                }
+            }
+            .map { SessionDisplay(summary: $0, isActive: $0.id == activeId) }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                if !folderPath.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder.fill")
+                            .foregroundStyle(.secondary)
+                        Text(folderPath)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                    }
+                    .padding(.horizontal, 16)
+                }
+
+                let sessions = sessionsInFolder
+                if sessions.isEmpty {
+                    ContentUnavailableView(
+                        "No Sessions",
+                        systemImage: "tray",
+                        description: Text("No sessions found in this folder.")
+                    )
+                } else {
+                    VStack(spacing: 12) {
+                        ForEach(sessions) { session in
+                            let summary = session.summary
+                            NavigationLink(value: NavigationDestination.session(summary.id)) {
+                                SessionRow(
+                                    title: summary.title ?? "New Chat",
+                                    lastMessage: model.selectedServerId.flatMap {
+                                        model.getLastMessagePreview(for: $0, sessionId: summary.id)
+                                    },
+                                    cwd: summary.cwd,
+                                    isActive: session.isActive
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+            .padding(.vertical, 8)
+        }
+        .navigationTitle(folderDisplayName)
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $searchText, prompt: "Search sessions")
+        .textInputAutocapitalization(.never)
+        .disableAutocorrection(true)
+    }
+}
+
 private enum NavigationDestination: Hashable {
     case session(String)
     case developerLogs
+    case folderSessions(path: String, displayName: String)
 }
 
 extension View {
