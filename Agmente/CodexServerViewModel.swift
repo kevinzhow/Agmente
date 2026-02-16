@@ -820,9 +820,20 @@ final class CodexServerViewModel: ObservableObject, Identifiable, ServerViewMode
 
     private func formatPromptError(_ error: Error) -> String {
         if let serviceError = error as? ACPServiceError, let message = serviceError.rpcMessage {
+            if let friendly = friendlyRestartGuidance(for: message) {
+                return "\(message)\n\n\(friendly)"
+            }
             return message
         }
         return error.localizedDescription
+    }
+
+    private func friendlyRestartGuidance(for rpcMessage: String) -> String? {
+        let normalized = rpcMessage.lowercased()
+        let isExperimentalCapabilityError = normalized.contains("collaborationmode")
+            && normalized.contains("experimentalapi")
+        guard isExperimentalCapabilityError else { return nil }
+        return "This Codex server may still be running with older initialization state. Try fully restarting the Codex app-server (or proxy server), then reconnect and initialize again."
     }
 
     @discardableResult
