@@ -2121,7 +2121,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             serverViewModels[serverId]?.updateAgentInfo(agentInfo)
             refreshImageAttachmentSupport(for: serverId)
 
-            initializationSummary = "\(agentInfo.displayName) (initialized)"
+            initializationSummary = "\(agentInfo.displayNameWithVersion) (initialized)"
 
             if let codexVM = serverViewModels[serverId] as? CodexServerViewModel {
                 codexVM.markInitializedAckNeeded()

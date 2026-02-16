@@ -59,6 +59,7 @@ final class InitializeParsingTests: XCTestCase {
 
         XCTAssertEqual(parsed?.connectedProtocol, .codexAppServer)
         XCTAssertEqual(parsed?.agentInfo?.name, "codex-app-server")
+        XCTAssertEqual(parsed?.agentInfo?.version, "1.0.0")
         XCTAssertEqual(parsed?.agentInfo?.description, "codex/1.0.0")
         XCTAssertEqual(parsed?.authMethods.count, 0)
         XCTAssertFalse(parsed?.promptCapabilitiesDeclared ?? true)
@@ -77,5 +78,39 @@ final class InitializeParsingTests: XCTestCase {
 
         XCTAssertEqual(parsed?.connectedProtocol, .acp)
         XCTAssertEqual(parsed?.agentInfo?.name, "test-agent")
+    }
+    
+    func testParseInitializeCodexVersionEdgeCases() {
+        // Test with semantic version
+        var result: ACP.Value = .object([
+            "userAgent": .string("codex/2.3.4"),
+        ])
+        var parsed = ACPInitializeParser.parse(result: result)
+        XCTAssertEqual(parsed?.agentInfo?.version, "2.3.4")
+        XCTAssertEqual(parsed?.agentInfo?.displayNameWithVersion, "Codex app-server v2.3.4")
+        
+        // Test with no slash (malformed)
+        result = .object([
+            "userAgent": .string("codex-1.0.0"),
+        ])
+        parsed = ACPInitializeParser.parse(result: result)
+        XCTAssertNil(parsed?.agentInfo?.version)
+        XCTAssertEqual(parsed?.agentInfo?.displayNameWithVersion, "Codex app-server")
+        
+        // Test with empty version part
+        result = .object([
+            "userAgent": .string("codex/"),
+        ])
+        parsed = ACPInitializeParser.parse(result: result)
+        XCTAssertNil(parsed?.agentInfo?.version)
+        XCTAssertEqual(parsed?.agentInfo?.displayNameWithVersion, "Codex app-server")
+        
+        // Test with different product name
+        result = .object([
+            "userAgent": .string("app-server/3.2.1"),
+        ])
+        parsed = ACPInitializeParser.parse(result: result)
+        XCTAssertEqual(parsed?.agentInfo?.version, "3.2.1")
+        XCTAssertEqual(parsed?.agentInfo?.displayNameWithVersion, "Codex app-server v3.2.1")
     }
 }

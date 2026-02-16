@@ -192,6 +192,7 @@ final class CodexServerViewModelTests: XCTestCase {
         let codexVM = model.selectedCodexServerViewModel
         XCTAssertNotNil(codexVM?.agentInfo, "CodexServerViewModel should have agentInfo")
         XCTAssertEqual(codexVM?.agentInfo?.name, "codex-app-server")
+        XCTAssertEqual(codexVM?.agentInfo?.version, "1.0.0")
         XCTAssertEqual(codexVM?.agentInfo?.description, "codex/1.0.0")
     }
 
