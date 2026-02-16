@@ -181,7 +181,8 @@ final class AgentViewModelTests: XCTestCase {
         model.acpService(service, didReceiveMessage: response)
 
         XCTAssertEqual(model.currentAgentInfo?.name, "codex-app-server")
-        XCTAssertEqual(model.initializationSummary, "Codex app-server (initialized)")
+        XCTAssertEqual(model.currentAgentInfo?.version, "1.0.0")
+        XCTAssertEqual(model.initializationSummary, "Codex app-server v1.0.0 (initialized)")
         XCTAssertEqual(model.currentLoadSessionSupport, false)
         XCTAssertTrue(model.currentSessionListSupport ?? false)
     }

@@ -95,15 +95,26 @@ public enum ACPInitializeParser {
         capabilities.sessionListRequiresCwd = false
         capabilities.promptCapabilities = PromptCapabilityState()
 
+        // Extract version from userAgent string (e.g., "codex/1.0.0" -> "1.0.0")
+        let version = parseCodexVersion(from: userAgent)
+
         return AgentProfile(
             id: nil,
             name: "codex-app-server",
             title: "Codex app-server",
-            version: nil,
+            version: version,
             description: userAgent,
             modes: [],
             capabilities: capabilities,
             verifications: []
         )
+    }
+    
+    private static func parseCodexVersion(from userAgent: String) -> String? {
+        // Expected format: "codex/1.0.0" or similar
+        let components = userAgent.split(separator: "/")
+        guard components.count == 2 else { return nil }
+        let versionString = String(components[1])
+        return versionString.isEmpty ? nil : versionString
     }
 }
